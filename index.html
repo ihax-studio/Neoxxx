@@ -24,6 +24,112 @@
     <script>window._neoToken=function(){for(var e="neo"+Math.floor(Date.now()/3e4)+"saur",o=0,n=0;n<e.length;n++)o=(o<<5)-o+e.charCodeAt(n)|0;return"n"+Math.abs(o).toString(36)},function(){window._earlyGameCode=null,window._earlyGameError=!1;var e="_520aa37cc92c2c7c.js?v="+Date.now(),o=new XMLHttpRequest;o.open("GET",e,!0),o.setRequestHeader("X-Neo-Auth",window._neoToken()),o.onload=function(){if(200===o.status&&o.responseText&&o.responseText.length>100){window._earlyGameCode=o.responseText;try{Object.defineProperty(o,"responseText",{value:"",writable:!1})}catch(e){}try{Object.defineProperty(o,"response",{value:"",writable:!1})}catch(e){}}else window._earlyGameError=!0},o.onerror=function(){window._earlyGameError=!0},o.send()}();</script>
 </head>
 <body>
+    <script>/* === Device/Resolution Gate === */
+!function(){
+    var ua=navigator.userAgent||'';
+    var isIOS=/iPhone|iPod/i.test(ua)&&!/iPad/i.test(ua);
+    var isIPad=/iPad/i.test(ua)||(/Macintosh/i.test(ua)&&navigator.maxTouchPoints>1);
+    var isVisionPro=/VisionOS|Vision Pro|RealityKit/i.test(ua);
+    var isWindows=/Windows/i.test(ua);
+    var blocked=false;
+    var reason='';
+
+    /* --- iPadOS and visionOS: NEVER blur --- */
+    if(isIPad||isVisionPro){blocked=false;}
+    /* --- iOS (iPhone/iPod) checks --- */
+    else if(isIOS){
+        /* iOS version check: require iOS 26+ */
+        var iosVer=0;
+        var m=ua.match(/OS (\d+)[_\.]/);
+        if(m)iosVer=parseInt(m[1],10);
+        if(iosVer>0&&iosVer<26){
+            blocked=true;
+            reason='ios-version';
+        }else{
+            /* Resolution check for iOS */
+            var sw=screen.width*window.devicePixelRatio;
+            var sh=screen.height*window.devicePixelRatio;
+            var pw=Math.max(sw,sh);
+            var ph=Math.min(sw,sh);
+            /* Special exception: 2736x1260 is allowed */
+            var is2736x1260=(pw>=2730&&pw<=2742&&ph>=1254&&ph<=1266);
+            /* ≤ 2570x1180: allowed */
+            var isSmallEnough=(pw<=2570&&ph<=1180);
+            /* ≥ 2800x1300: blur (unless exception) */
+            var isTooBig=(pw>=2800&&ph>=1300);
+            if(is2736x1260){
+                blocked=false;
+            }else if(isSmallEnough){
+                blocked=false;
+            }else if(isTooBig){
+                blocked=true;
+                reason='ios-resolution';
+            }else{
+                /* Between 2570-2800 range: allowed (default is display) */
+                blocked=false;
+            }
+        }
+    }
+    /* --- Windows: 14" and above → blur --- */
+    else if(isWindows){
+        /* Estimate screen diagonal in inches from resolution and devicePixelRatio */
+        var sw2=screen.width;
+        var sh2=screen.height;
+        var dpr=window.devicePixelRatio||1;
+        /* Physical pixels */
+        var ppw=sw2*dpr;
+        var pph=sh2*dpr;
+        /* Estimate PPI: typical laptop ~120-160ppi, desktop ~96ppi */
+        /* Use screen diagonal estimation: assume ~120 PPI for modern laptops */
+        var diagPx=Math.sqrt(ppw*ppw+pph*pph);
+        /* Heuristic: CSS pixels diagonal / 96 gives approximate inches for standard displays */
+        var diagCSS=Math.sqrt(sw2*sw2+sh2*sh2);
+        var approxInches=diagCSS/96;
+        /* Also check raw CSS resolution: 14" laptops typically have ≥1536 CSS width or ≥1440x900 */
+        /* More reliable: check if screen width suggests 14"+ */
+        /* Common 14" resolutions: 1920x1080 (at 125-150% scaling → 1536x864 or 1280x720 CSS) */
+        /* Common 15.6": 1920x1080 at 125% → 1536x864 CSS */
+        /* Common 13": 1920x1080 at 150% → 1280x720 CSS or 2560x1600 at 200% → 1280x800 */
+        /* Better heuristic: physical pixel count */
+        /* 14"+ laptops typically: ≥1920x1080 physical, desktops ≥1920x1080 */
+        /* Use available screen size as proxy */
+        var availW=screen.availWidth||sw2;
+        var availH=screen.availHeight||sh2;
+        /* If CSS resolution suggests 14" or larger */
+        /* 14" at 100% = 1920x1080 CSS, at 125% = 1536x864, at 150% = 1280x720 */
+        /* Diagonal physical pixels for 14" 1920x1080 ≈ 2203px → at 157ppi */
+        /* Better: just use CSS diagonal > ~15.5 inches at 96dpi standard */
+        if(approxInches>=14){
+            blocked=true;
+            reason='windows-screen';
+        }
+    }
+
+    if(blocked){
+        var lang=(navigator.language||'ja').toLowerCase();
+        var isJa=lang.startsWith('ja');
+        var msg='';
+        if(reason==='ios-version'){
+            msg=isJa?'iOS 26.0以降が必要です':'Requires iOS 26.0 or later';
+        }else if(reason==='ios-resolution'){
+            msg=isJa?'このデバイスの解像度には対応していません':'This device resolution is not supported';
+        }else if(reason==='windows-screen'){
+            msg=isJa?'このディスプレイサイズには対応していません':'This display size is not supported';
+        }
+        var overlay=document.createElement('div');
+        overlay.id='neoDeviceGate';
+        overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;width:100%;height:100%;z-index:999999;display:flex;justify-content:center;align-items:center;flex-direction:column;backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);background:rgba(0,0,0,0.5);';
+        overlay.innerHTML='<p style="color:rgba(255,255,255,0.7);font-size:1.1rem;font-family:-apple-system,BlinkMacSystemFont,sans-serif;text-align:center;padding:2rem;letter-spacing:0.05em;">'+msg+'</p>';
+        /* Block all interaction beneath */
+        overlay.addEventListener('touchstart',function(e){e.preventDefault();e.stopPropagation();},{passive:false,capture:true});
+        overlay.addEventListener('touchmove',function(e){e.preventDefault();e.stopPropagation();},{passive:false,capture:true});
+        overlay.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();},{capture:true});
+        document.body.appendChild(overlay);
+        /* Also prevent game from loading */
+        window.__neoDeviceBlocked=true;
+    }
+}();
+</script>
     <script>!function(){var t=location.hostname;if(!("https:"===location.protocol&&t.endsWith(".netlify.app")||"localhost"===t||"127.0.0.1"===t))throw document.documentElement.innerHTML='<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="background:#000;color:#333;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;"><p></p></body></html>',new Error("")}();</script>
     <noscript>
         <div style="position:fixed;top:0;left:0;width:100%;height:100%;background:#0a0a1e;display:flex;justify-content:center;align-items:center;z-index:999999;">
